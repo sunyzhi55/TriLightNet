@@ -1,4 +1,4 @@
-# TriLightNet: A Triple-modal Light Fusion Network for Progressive Mild Cognitive Impairment Detection in Alzheimer’s Disease
+# A Lightweight Triple-Modal Fusion Network for Progressive Mild Cognitive Impairment Prediction in Alzheimer's Disease 
 
 
 
