@@ -88,6 +88,7 @@ def prepare_to_train(mri_dir, pet_dir, cli_dir, csv_file, batch_size, model_inde
         'balanceAccuracy':[],
         'Specificity': [],
         'auc': [],
+        'CohenKappa':[],
         'f1': [],
     }
     # 训练日志和监控
@@ -195,6 +196,7 @@ def prepare_to_train(mri_dir, pet_dir, cli_dir, csv_file, batch_size, model_inde
         metrics['Specificity'].append(observer.best_dicts['Specificity'])
         metrics['balanceAccuracy'].append(observer.best_dicts['BalanceAccuracy'])
         metrics['auc'].append(observer.best_dicts['AuRoc'])
+        metrics['CohenKappa'].append(observer.best_dicts['CohenKappa'])
         metrics['f1'].append(observer.best_dicts['F1'])
     print("Cross-validation training completed for all folds.")
     return metrics

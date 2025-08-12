@@ -8,9 +8,9 @@
 
 ## 1 FrameWork
 
+![TriLightNet](assets/TriLightNet.jpeg)
 
 
-![iTriLightNet](assets/TriLightNet.png)
 
 ## 2 Source Tree
 

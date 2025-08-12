@@ -431,6 +431,274 @@ class TriLightNet(nn.Module):
         output = self.classify_head(result)
         return output
 
+class TriLightNetNoMRI(nn.Module):
+    def __init__(self, num_classes=2):
+        super(TriLightNetNoMRI, self).__init__()
+        self.name = 'TriLightNetNoMRI'
+        # self.MriExtraction = get_no_pretrained_vision_encoder()
+        self.PetExtraction = get_no_pretrained_vision_encoder()
+        self.Table = TransformerEncoder(output_dim=128)
+        self.Table_Fit = nn.Linear(128, 256)
+
+        # self.mri_cli_fusion = CrossModalCBAM(img_channels=256, table_dim=128)
+        self.pet_cli_fusion = CrossModalCBAM(img_channels=256, table_dim=128)
+        self.fusion = CascadedGroupCrossAttention1D(dim=256, key_dim=16, num_heads=4, resolution=1, attn_ratio=4)
+
+        # self.mamba1 = SelfMamba(256, 256, hidden_dropout_prob=0.2, d_state=64)
+        # self.mamba2 = SelfMamba(256, 256, hidden_dropout_prob=0.2, d_state=64)
+        # self.mamba3 = SelfMamba(256, 256, hidden_dropout_prob=0.2, d_state=64)
+
+        # self.SA1 = SelfAttention(16, 256, 256, hidden_dropout_prob=0.2)
+        # self.SA2 = SelfAttention(16, 256, 256, hidden_dropout_prob=0.2)
+        # self.SA3 = SelfAttention(16, 256, 256, hidden_dropout_prob=0.2)
+
+        # self.classify_head = DenseNet(layer_num=(6, 12, 24, 16), growth_rate=16, in_channels=1, classes=num_classes)
+        self.avgpool = nn.AdaptiveAvgPool3d((1, 1, 1))
+        self.classify_head = MlpKan(init_features=256 * 2, classes=num_classes)
+        # self.classify_head = MoE_Classifier(
+        #     in_features=512,
+        #     num_experts=4,
+        #     hidden_dim=256,
+        #     num_classes=num_classes,
+        #     top_k=2
+        # )
+
+    def forward(self, mri, pet, cli):
+        """
+        Mri: [8, 1, 96, 128, 96]
+        Pet: [8, 1, 96, 128, 96]
+        Clinical: [8, 9]
+        """
+        # print("mri", mri.shape)
+        # print("pet", pet.shape)
+        # print("cli", cli.shape)
+        # mri_feature = self.MriExtraction(mri)  # torch.Size([8, 256, 3, 4, 3])
+        # print(f'mri feature shape: {mri_feature.shape}')
+        pet_feature = self.PetExtraction(pet)  # torch.Size([8, 256, 3, 4, 3])
+        # print(f'pet feature.shape:{pet_feature.shape}')
+        cli_feature = self.Table(cli)  # [8, 256]
+
+        # mri_feature = self.SA1(mri_feature)
+        # pet_feature = self.SA2(pet_feature)
+        # cli_feature = self.SA3(cli_feature)
+        # mri_cli_feature = self.mri_cli_fusion(mri_feature, cli_feature) # torch.Size([8, 256, 3, 4, 3])
+
+        mri_cli_feature = self.Table_Fit(cli_feature) # torch.Size([8, 256, 3, 4, 3])
+        pet_cli_feature = self.pet_cli_fusion(pet_feature, cli_feature) # torch.Size([8, 256, 3, 4, 3])
+        # mri_cli_feature = self.avgpool(mri_cli_feature).view(mri_cli_feature.shape[0], -1)
+        pet_cli_feature = self.avgpool(pet_cli_feature).view(pet_cli_feature.shape[0], -1)
+        mri_cli_feature = mri_cli_feature.unsqueeze(1)# torch.Size([8, 1, 256])
+        pet_cli_feature = pet_cli_feature.unsqueeze(1)# torch.Size([8, 1, 256])
+
+        # torch.Size([8, 1, 256])
+
+        result_mri_cli, result_pet_cli = self.fusion(mri_cli_feature, pet_cli_feature)
+        result = torch.cat((result_mri_cli, result_pet_cli), dim=-1)
+
+        # 获取MoE输出（不再包含损失计算）
+        # moe_output = self.classify_head(result)
+        # return moe_output  # 只返回预测结果
+        output = self.classify_head(result)
+        return output
+
+class TriLightNetNoPET(nn.Module):
+    def __init__(self, num_classes=2):
+        super(TriLightNetNoPET, self).__init__()
+        self.name = 'TriLightNetNoPET'
+        self.MriExtraction = get_no_pretrained_vision_encoder()
+        # self.PetExtraction = get_no_pretrained_vision_encoder()
+        self.Table = TransformerEncoder(output_dim=128)
+        self.Table_Fit = nn.Linear(128, 256)
+        self.mri_cli_fusion = CrossModalCBAM(img_channels=256, table_dim=128)
+        # self.pet_cli_fusion = CrossModalCBAM(img_channels=256, table_dim=128)
+        self.fusion = CascadedGroupCrossAttention1D(dim=256, key_dim=16, num_heads=4, resolution=1, attn_ratio=4)
+
+        # self.mamba1 = SelfMamba(256, 256, hidden_dropout_prob=0.2, d_state=64)
+        # self.mamba2 = SelfMamba(256, 256, hidden_dropout_prob=0.2, d_state=64)
+        # self.mamba3 = SelfMamba(256, 256, hidden_dropout_prob=0.2, d_state=64)
+
+        # self.SA1 = SelfAttention(16, 256, 256, hidden_dropout_prob=0.2)
+        # self.SA2 = SelfAttention(16, 256, 256, hidden_dropout_prob=0.2)
+        # self.SA3 = SelfAttention(16, 256, 256, hidden_dropout_prob=0.2)
+
+        # self.classify_head = DenseNet(layer_num=(6, 12, 24, 16), growth_rate=16, in_channels=1, classes=num_classes)
+        self.avgpool = nn.AdaptiveAvgPool3d((1, 1, 1))
+        self.classify_head = MlpKan(init_features=256 * 2, classes=num_classes)
+        # self.classify_head = MoE_Classifier(
+        #     in_features=512,
+        #     num_experts=4,
+        #     hidden_dim=256,
+        #     num_classes=num_classes,
+        #     top_k=2
+        # )
+
+    def forward(self, mri, pet, cli):
+        """
+        Mri: [8, 1, 96, 128, 96]
+        Pet: [8, 1, 96, 128, 96]
+        Clinical: [8, 9]
+        """
+        # print("mri", mri.shape)
+        # print("pet", pet.shape)
+        # print("cli", cli.shape)
+        mri_feature = self.MriExtraction(mri)  # torch.Size([8, 256, 3, 4, 3])
+        # print(f'mri feature shape: {mri_feature.shape}')
+        # pet_feature = self.PetExtraction(pet)  # torch.Size([8, 256, 3, 4, 3])
+        # print(f'pet feature.shape:{pet_feature.shape}')
+        cli_feature = self.Table(cli)  # [8, 256]
+
+        # mri_feature = self.SA1(mri_feature)
+        # pet_feature = self.SA2(pet_feature)
+        # cli_feature = self.SA3(cli_feature)
+        mri_cli_feature = self.mri_cli_fusion(mri_feature, cli_feature) # torch.Size([8, 256, 3, 4, 3])
+        pet_cli_feature = self.Table_Fit(cli_feature) # torch.Size([8, 256, 3, 4, 3])
+        mri_cli_feature = self.avgpool(mri_cli_feature).view(mri_cli_feature.shape[0], -1)
+        # pet_cli_feature = self.avgpool(pet_cli_feature).view(pet_cli_feature.shape[0], -1)
+        mri_cli_feature = mri_cli_feature.unsqueeze(1)# torch.Size([8, 1, 256])
+        pet_cli_feature = pet_cli_feature.unsqueeze(1)# torch.Size([8, 1, 256])
+
+        # torch.Size([8, 1, 256])
+
+        result_mri_cli, result_pet_cli = self.fusion(mri_cli_feature, pet_cli_feature)
+        result = torch.cat((result_mri_cli, result_pet_cli), dim=-1)
+
+        # 获取MoE输出（不再包含损失计算）
+        # moe_output = self.classify_head(result)
+        # return moe_output  # 只返回预测结果
+        output = self.classify_head(result)
+        return output
+
+class TriLightNetNoCli(nn.Module):
+    def __init__(self, num_classes=2):
+        super(TriLightNetNoCli, self).__init__()
+        self.name = 'TriLightNetNoCli'
+        self.MriExtraction = get_no_pretrained_vision_encoder()
+        self.PetExtraction = get_no_pretrained_vision_encoder()
+        self.Table = TransformerEncoder(output_dim=128)
+        # self.mri_cli_fusion = CrossModalCBAM(img_channels=256, table_dim=128)
+        # self.pet_cli_fusion = CrossModalCBAM(img_channels=256, table_dim=128)
+        self.fusion = CascadedGroupCrossAttention1D(dim=256, key_dim=16, num_heads=4, resolution=1, attn_ratio=4)
+
+        # self.mamba1 = SelfMamba(256, 256, hidden_dropout_prob=0.2, d_state=64)
+        # self.mamba2 = SelfMamba(256, 256, hidden_dropout_prob=0.2, d_state=64)
+        # self.mamba3 = SelfMamba(256, 256, hidden_dropout_prob=0.2, d_state=64)
+
+        # self.SA1 = SelfAttention(16, 256, 256, hidden_dropout_prob=0.2)
+        # self.SA2 = SelfAttention(16, 256, 256, hidden_dropout_prob=0.2)
+        # self.SA3 = SelfAttention(16, 256, 256, hidden_dropout_prob=0.2)
+
+        # self.classify_head = DenseNet(layer_num=(6, 12, 24, 16), growth_rate=16, in_channels=1, classes=num_classes)
+        self.avgpool = nn.AdaptiveAvgPool3d((1, 1, 1))
+        self.classify_head = MlpKan(init_features=256 * 2, classes=num_classes)
+        # self.classify_head = MoE_Classifier(
+        #     in_features=512,
+        #     num_experts=4,
+        #     hidden_dim=256,
+        #     num_classes=num_classes,
+        #     top_k=2
+        # )
+
+    def forward(self, mri, pet, cli):
+        """
+        Mri: [8, 1, 96, 128, 96]
+        Pet: [8, 1, 96, 128, 96]
+        Clinical: [8, 9]
+        """
+        # print("mri", mri.shape)
+        # print("pet", pet.shape)
+        # print("cli", cli.shape)
+        mri_feature = self.MriExtraction(mri)  # torch.Size([8, 256, 3, 4, 3])
+        # print(f'mri feature shape: {mri_feature.shape}')
+        pet_feature = self.PetExtraction(pet)  # torch.Size([8, 256, 3, 4, 3])
+        # print(f'pet feature.shape:{pet_feature.shape}')
+        # cli_feature = self.Table(cli)  # [8, 256]
+
+        # mri_feature = self.SA1(mri_feature)
+        # pet_feature = self.SA2(pet_feature)
+        # cli_feature = self.SA3(cli_feature)
+        mri_cli_feature = mri_feature # torch.Size([8, 256, 3, 4, 3])
+        pet_cli_feature = pet_feature # torch.Size([8, 256, 3, 4, 3])
+        mri_cli_feature = self.avgpool(mri_cli_feature).view(mri_cli_feature.shape[0], -1)
+        pet_cli_feature = self.avgpool(pet_cli_feature).view(pet_cli_feature.shape[0], -1)
+        mri_cli_feature = mri_cli_feature.unsqueeze(1)# torch.Size([8, 1, 256])
+        pet_cli_feature = pet_cli_feature.unsqueeze(1)# torch.Size([8, 1, 256])
+
+        # torch.Size([8, 1, 256])
+
+        result_mri_cli, result_pet_cli = self.fusion(mri_cli_feature, pet_cli_feature)
+        result = torch.cat((result_mri_cli, result_pet_cli), dim=-1)
+
+        # 获取MoE输出（不再包含损失计算）
+        # moe_output = self.classify_head(result)
+        # return moe_output  # 只返回预测结果
+        output = self.classify_head(result)
+        return output
+
+class TriLightNetMLP_replace_KAN(nn.Module):
+    def __init__(self, num_classes=2):
+        super(TriLightNetMLP_replace_KAN, self).__init__()
+        self.name = 'TriLightNetMLP_replace_KAN'
+        self.MriExtraction = get_no_pretrained_vision_encoder()
+        self.PetExtraction = get_no_pretrained_vision_encoder()
+        self.Table = TransformerEncoder_MLP_replace_KAN(output_dim=128)
+        self.mri_cli_fusion = CrossModalCBAM(img_channels=256, table_dim=128)
+        self.pet_cli_fusion = CrossModalCBAM(img_channels=256, table_dim=128)
+        self.fusion = CascadedGroupCrossAttention1D(dim=256, key_dim=16, num_heads=4, resolution=1, attn_ratio=4)
+
+        # self.mamba1 = SelfMamba(256, 256, hidden_dropout_prob=0.2, d_state=64)
+        # self.mamba2 = SelfMamba(256, 256, hidden_dropout_prob=0.2, d_state=64)
+        # self.mamba3 = SelfMamba(256, 256, hidden_dropout_prob=0.2, d_state=64)
+
+        # self.SA1 = SelfAttention(16, 256, 256, hidden_dropout_prob=0.2)
+        # self.SA2 = SelfAttention(16, 256, 256, hidden_dropout_prob=0.2)
+        # self.SA3 = SelfAttention(16, 256, 256, hidden_dropout_prob=0.2)
+
+        # self.classify_head = DenseNet(layer_num=(6, 12, 24, 16), growth_rate=16, in_channels=1, classes=num_classes)
+        self.avgpool = nn.AdaptiveAvgPool3d((1, 1, 1))
+        self.classify_head = MlpKan(init_features=256 * 2, classes=num_classes)
+        # self.classify_head = MoE_Classifier(
+        #     in_features=512,
+        #     num_experts=4,
+        #     hidden_dim=256,
+        #     num_classes=num_classes,
+        #     top_k=2
+        # )
+
+    def forward(self, mri, pet, cli):
+        """
+        Mri: [8, 1, 96, 128, 96]
+        Pet: [8, 1, 96, 128, 96]
+        Clinical: [8, 9]
+        """
+        # print("mri", mri.shape)
+        # print("pet", pet.shape)
+        # print("cli", cli.shape)
+        mri_feature = self.MriExtraction(mri)  # torch.Size([8, 256, 3, 4, 3])
+        # print(f'mri feature shape: {mri_feature.shape}')
+        pet_feature = self.PetExtraction(pet)  # torch.Size([8, 256, 3, 4, 3])
+        # print(f'pet feature.shape:{pet_feature.shape}')
+        cli_feature = self.Table(cli)  # [8, 256]
+
+        # mri_feature = self.SA1(mri_feature)
+        # pet_feature = self.SA2(pet_feature)
+        # cli_feature = self.SA3(cli_feature)
+        mri_cli_feature = self.mri_cli_fusion(mri_feature, cli_feature) # torch.Size([8, 256, 3, 4, 3])
+        pet_cli_feature = self.pet_cli_fusion(pet_feature, cli_feature) # torch.Size([8, 256, 3, 4, 3])
+        mri_cli_feature = self.avgpool(mri_cli_feature).view(mri_cli_feature.shape[0], -1)
+        pet_cli_feature = self.avgpool(pet_cli_feature).view(pet_cli_feature.shape[0], -1)
+        mri_cli_feature = mri_cli_feature.unsqueeze(1)# torch.Size([8, 1, 256])
+        pet_cli_feature = pet_cli_feature.unsqueeze(1)# torch.Size([8, 1, 256])
+
+        # torch.Size([8, 1, 256])
+
+        result_mri_cli, result_pet_cli = self.fusion(mri_cli_feature, pet_cli_feature)
+        result = torch.cat((result_mri_cli, result_pet_cli), dim=-1)
+
+        # 获取MoE输出（不再包含损失计算）
+        # moe_output = self.classify_head(result)
+        # return moe_output  # 只返回预测结果
+        output = self.classify_head(result)
+        return output
 class TriLightNetWithoutCBAMWithCasCade(nn.Module):
     def __init__(self, num_classes=2):
         super(TriLightNetWithoutCBAMWithCasCade, self).__init__()
@@ -484,7 +752,7 @@ class TriLightNetWithoutCBAMWithCasCade(nn.Module):
 class TriLightNetWithCBAMWithOutCasCade(nn.Module):
     def __init__(self, num_classes=2):
         super(TriLightNetWithCBAMWithOutCasCade, self).__init__()
-        self.name = 'TriLightNet'
+        self.name = 'TriLightNetWithCBAMWithOutCasCade'
         self.MriExtraction = get_no_pretrained_vision_encoder()
         self.PetExtraction = get_no_pretrained_vision_encoder()
         self.Table = TransformerEncoder(output_dim=128)
@@ -539,7 +807,7 @@ class TriLightNetWithCBAMWithOutCasCade(nn.Module):
 class TriLightNetWithOutCBAMWithoutCascade(nn.Module):
     def __init__(self, num_classes=2):
         super(TriLightNetWithOutCBAMWithoutCascade, self).__init__()
-        self.name = 'TriLightNet'
+        self.name = 'TriLightNetWithOutCBAMWithoutCascade'
         self.MriExtraction = get_no_pretrained_vision_encoder()
         self.PetExtraction = get_no_pretrained_vision_encoder()
         self.Table = TransformerEncoder(output_dim=256)
@@ -573,6 +841,153 @@ class TriLightNetWithOutCBAMWithoutCascade(nn.Module):
         output = self.classify_head(result)
         return output
 
+
+class TriLightNetWithoutCBAMWithCasCadeKAN_Replace_MLP(nn.Module):
+    def __init__(self, num_classes=2):
+        super(TriLightNetWithoutCBAMWithCasCadeKAN_Replace_MLP, self).__init__()
+        self.name = 'TriLightNetWithoutCBAMWithCasCadeKAN_Replace_MLP'
+        self.MriExtraction = get_no_pretrained_vision_encoder()
+        self.PetExtraction = get_no_pretrained_vision_encoder()
+        self.Table = TransformerEncoder_MLP_replace_KAN(output_dim=256)
+        # self.mri_cli_fusion = CrossModalCBAM(img_channels=256, table_dim=128)
+        # self.pet_cli_fusion = CrossModalCBAM(img_channels=256, table_dim=128)
+        self.fusion = CascadedGroupCrossAttention1D(dim=256, key_dim=16, num_heads=4, resolution=1, attn_ratio=4)
+
+        # self.classify_head = DenseNet(layer_num=(6, 12, 24, 16), growth_rate=16, in_channels=1, classes=num_classes)
+        self.avgpool = nn.AdaptiveAvgPool3d((1, 1, 1))
+        self.classify_head = MlpKan(init_features=256 * 2, classes=num_classes)
+        # self.classify_head = MoE_Classifier(
+        #     in_features=512,
+        #     num_experts=4,
+        #     hidden_dim=256,
+        #     num_classes=num_classes,
+        #     top_k=2
+        # )
+
+    def forward(self, mri, pet, cli):
+        """
+        Mri: [8, 1, 96, 128, 96]
+        Pet: [8, 1, 96, 128, 96]
+        Clinical: [8, 9]
+        """
+        mri_feature = self.MriExtraction(mri)  # torch.Size([8, 256, 3, 4, 3])
+        # print(f'mri feature shape: {mri_feature.shape}')
+        mri_feature = self.avgpool(mri_feature)
+        mri_feature = mri_feature.view(mri_feature.size(0), -1)
+        pet_feature = self.PetExtraction(pet)  # torch.Size([8, 256, 3, 4, 3])
+        pet_feature = self.avgpool(pet_feature)
+        pet_feature = pet_feature.view(pet_feature.size(0), -1)
+        # print(f'pet feature.shape:{pet_feature.shape}')
+        cli_feature = self.Table(cli)  # [8, 256]
+        mri_cli_feature = mri_feature + cli_feature # torch.Size([8, 256])
+        pet_cli_feature = pet_feature + cli_feature # torch.Size([8, 256])
+        mri_cli_feature = mri_cli_feature.unsqueeze(1)# torch.Size([8, 1, 256])
+        pet_cli_feature = pet_cli_feature.unsqueeze(1)# torch.Size([8, 1, 256])
+        result_mri_cli, result_pet_cli = self.fusion(mri_cli_feature, pet_cli_feature)
+        result = torch.cat((result_mri_cli, result_pet_cli), dim=-1).squeeze(1)
+        # 获取MoE输出（不再包含损失计算）
+        # moe_output = self.classify_head(result)
+        # return moe_output  # 只返回预测结果
+        output = self.classify_head(result)
+        return output
+
+
+class TriLightNetWithCBAMWithOutCasCadeMLP_replace_KAN(nn.Module):
+    def __init__(self, num_classes=2):
+        super(TriLightNetWithCBAMWithOutCasCadeMLP_replace_KAN, self).__init__()
+        self.name = 'TriLightNetWithCBAMWithOutCasCadeMLP_replace_KAN'
+        self.MriExtraction = get_no_pretrained_vision_encoder()
+        self.PetExtraction = get_no_pretrained_vision_encoder()
+        self.Table = TransformerEncoder_MLP_replace_KAN(output_dim=128)
+        self.mri_cli_fusion = CrossModalCBAM(img_channels=256, table_dim=128)
+        self.pet_cli_fusion = CrossModalCBAM(img_channels=256, table_dim=128)
+        # self.fusion = CascadedGroupCrossAttention1D(dim=256, key_dim=16, num_heads=4, resolution=1, attn_ratio=4)
+
+
+        # self.classify_head = DenseNet(layer_num=(6, 12, 24, 16), growth_rate=16, in_channels=1, classes=num_classes)
+        self.avgpool = nn.AdaptiveAvgPool3d((1, 1, 1))
+        self.classify_head = MlpKan(init_features=256 * 2, classes=num_classes)
+        # self.classify_head = MoE_Classifier(
+        #     in_features=512,
+        #     num_experts=4,
+        #     hidden_dim=256,
+        #     num_classes=num_classes,
+        #     top_k=2
+        # )
+
+    def forward(self, mri, pet, cli):
+        """
+        Mri: [8, 1, 96, 128, 96]
+        Pet: [8, 1, 96, 128, 96]
+        Clinical: [8, 9]
+        """
+        mri_feature = self.MriExtraction(mri)  # torch.Size([8, 256, 3, 4, 3])
+        # print(f'mri feature shape: {mri_feature.shape}')
+        pet_feature = self.PetExtraction(pet)  # torch.Size([8, 256, 3, 4, 3])
+        # print(f'pet feature.shape:{pet_feature.shape}')
+        cli_feature = self.Table(cli)  # [8, 256]
+
+        # mri_feature = self.SA1(mri_feature)
+        # pet_feature = self.SA2(pet_feature)
+        # cli_feature = self.SA3(cli_feature)
+        mri_cli_feature = self.mri_cli_fusion(mri_feature, cli_feature) # torch.Size([8, 256, 3, 4, 3])
+        pet_cli_feature = self.pet_cli_fusion(pet_feature, cli_feature) # torch.Size([8, 256, 3, 4, 3])
+        mri_cli_feature = self.avgpool(mri_cli_feature).view(mri_cli_feature.shape[0], -1)
+        pet_cli_feature = self.avgpool(pet_cli_feature).view(pet_cli_feature.shape[0], -1)
+        # mri_cli_feature = mri_cli_feature.unsqueeze(1)# torch.Size([8, 1, 256])
+        # pet_cli_feature = pet_cli_feature.unsqueeze(1)# torch.Size([8, 1, 256])
+
+        # torch.Size([8, 1, 256])
+
+        result = torch.cat((mri_cli_feature, pet_cli_feature), dim=-1)
+
+        # 获取MoE输出（不再包含损失计算）
+        # moe_output = self.classify_head(result)
+        # return moe_output  # 只返回预测结果
+        output = self.classify_head(result)
+        return output
+
+class TriLightNetWithOutCBAMWithoutCascadeMLP_replace_KAN(nn.Module):
+    def __init__(self, num_classes=2):
+        super(TriLightNetWithOutCBAMWithoutCascadeMLP_replace_KAN, self).__init__()
+        self.name = 'TriLightNetWithOutCBAMWithoutCascadeMLP_replace_KAN'
+        self.MriExtraction = get_no_pretrained_vision_encoder()
+        self.PetExtraction = get_no_pretrained_vision_encoder()
+        self.Table = TransformerEncoder_MLP_replace_KAN(output_dim=256)
+        # self.classify_head = DenseNet(layer_num=(6, 12, 24, 16), growth_rate=16, in_channels=1, classes=num_classes)
+        self.avgpool = nn.AdaptiveAvgPool3d((1, 1, 1))
+        self.classify_head = MlpKan(init_features=256 * 3, classes=num_classes)
+        # self.classify_head = MoE_Classifier(
+        #     in_features=512,
+        #     num_experts=4,
+        #     hidden_dim=256,
+        #     num_classes=num_classes,
+        #     top_k=2
+        # )
+
+    def forward(self, mri, pet, cli):
+        """
+        Mri: [8, 1, 96, 128, 96]
+        Pet: [8, 1, 96, 128, 96]
+        Clinical: [8, 9]
+        """
+        mri_feature = self.MriExtraction(mri)  # torch.Size([8, 256, 3, 4, 3])
+        # print(f'mri feature shape: {mri_feature.shape}')
+        mri_feature = self.avgpool(mri_feature)
+        mri_feature = mri_feature.view(mri_feature.size(0), -1)
+        pet_feature = self.PetExtraction(pet)  # torch.Size([8, 256, 3, 4, 3])
+        pet_feature = self.avgpool(pet_feature)
+        pet_feature = pet_feature.view(pet_feature.size(0), -1)
+        # print(f'pet feature.shape:{pet_feature.shape}')
+        cli_feature = self.Table(cli)  # [8, 256]
+        result = torch.cat([mri_feature, pet_feature, cli_feature], dim=-1)
+        output = self.classify_head(result)
+        return output
+"""
+TriLightNetWithoutCBAMWithCasCadeKAN_Replace_MLP
+TriLightNetWithCBAMWithOutCasCadeMLP_replace_KAN
+TriLightNetWithOutCBAMWithoutCascadeMLP_replace_KAN
+"""
 
 if __name__ == '__main__':
     # model = TriLightNet()

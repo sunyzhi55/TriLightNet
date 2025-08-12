@@ -1,7 +1,10 @@
 import torch
 import torch.nn as nn
 from timm.layers import DropPath
-from Net.kan import *
+# from Net.kan import *
+from kan import KAN
+import math
+import torch.nn.functional as F
 # from mamba_ssm import Mamba
 
 # 定义交叉洗牌函数，交叉/穿插拼接
@@ -243,6 +246,55 @@ class TransformerEncoder(nn.Module):
         # Step 1: Input Embedding (Projection)
         # self.embedding = nn.Linear(input_dim, embed_dim)  # 把输入投影到更高维度（可调）
         self.fc1 = KAN([9, embed_dim])
+        # =======================================================================
+        # Step 2: Transformer Encoder Layer
+        # encoder_layer = nn.TransformerEncoderLayer(
+        #     d_model=embed_dim,
+        #     nhead=num_heads,
+        #     dim_feedforward=ff_hidden_dim
+        # )
+        # self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+        # =======================================================================
+
+        # pool_transformer
+        self.transformer_encoder = TransformerStylePoolFormer(num_layers=num_layers, dim=embed_dim)
+
+
+        # Step 3: Output Projection to required output_dim
+        self.fc_out = nn.Linear(embed_dim, output_dim)
+
+    def forward(self, x):
+        # x shape: [batchsize, 9]
+
+        # Project input to higher dimension (embedding)
+        x = self.fc1(x)  # shape: [batchsize, 9] -> [batchsize, embed_dim]
+
+        # Add an extra dimension for the sequence length (needed for Transformer)
+        x = x.unsqueeze(1)  # shape: [batchsize, 1, embed_dim]
+
+        # Transformer Encoder expects input shape [sequence length, batchsize, embedding_dim]
+        x = x.permute(1, 0, 2)  # shape: [1, batchsize, embed_dim]
+
+        # Apply Transformer Encoder
+        x = self.transformer_encoder(x)  # shape: [1, batchsize, embed_dim]
+
+        # Remove the sequence dimension (transpose back)
+        x = x.squeeze(0)  # shape: [batchsize, embed_dim]
+
+        # Project to the required output dimension
+        output = self.fc_out(x)  # shape: [batchsize, embed_dim] -> [batchsize, 400]
+
+        return output
+
+
+class TransformerEncoder_MLP_replace_KAN(nn.Module):
+    def __init__(self, input_dim=9, embed_dim=128, num_heads=4, ff_hidden_dim=512, num_layers=3, output_dim=400):
+        super(TransformerEncoder_MLP_replace_KAN, self).__init__()
+
+        # Step 1: Input Embedding (Projection)
+        # self.embedding = nn.Linear(input_dim, embed_dim)  # 把输入投影到更高维度（可调）
+
+        self.fc1 = nn.Linear(9, embed_dim)
         # =======================================================================
         # Step 2: Transformer Encoder Layer
         # encoder_layer = nn.TransformerEncoderLayer(

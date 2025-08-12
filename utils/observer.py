@@ -1,4 +1,4 @@
-from torchmetrics import Accuracy, Recall, Precision, Specificity, F1Score
+from torchmetrics import Accuracy, Recall, Precision, Specificity, F1Score, CohenKappa
 from torchmetrics import AUROC, MetricCollection, ConfusionMatrix, MatthewsCorrCoef
 from torch.utils.tensorboard import SummaryWriter
 import torch
@@ -37,7 +37,7 @@ class EarlyStopping:
 
 class RuntimeObserver:
     def __init__(self, log_dir, device, num_classes=2,
-                 task: Literal["binary", "multiclass", "multilabel"]="binary",
+                 task: Literal["binary", "multiclass"]="binary",
                  average: Literal["micro", "macro", "weighted", "none"] = "micro",
                  **kwargs):
         """
@@ -49,7 +49,8 @@ class RuntimeObserver:
         """
         self.best_dicts = {'epoch': 0, 'confusionMatrix':None, 'Accuracy': 0.,
                            'Recall': 0., 'Precision': 0., 'Specificity': 0., 'BalanceAccuracy':0.,
-                           'F1': 0., 'AuRoc': 0.}
+                           'F1': 0., 'AuRoc': 0.,
+                           'CohenKappa': 0.}
         self.log_dir = str(log_dir)
         self.log_file = self.log_dir + 'log.txt'
         self._kwargs = {'name': kwargs['name'] if kwargs.__contains__('name') else 'None',
@@ -67,9 +68,7 @@ class RuntimeObserver:
             'Recall': Recall(num_classes=num_classes, task=task, average=average).to(device),
             'Specificity': Specificity(num_classes=num_classes, task=task, average=average).to(device),
             'F1': F1Score(num_classes=num_classes, task=task, average=average).to(device),
-            # "MatthewsCorrCoef": MatthewsCorrCoef(num_classes=num_classes, task=task).to(device),
-            # 'AuRoc': AUROC(num_classes=num_classes, task=task),
-            # 'BalanceAccuracy': None,
+            'CohenKappa': CohenKappa(num_classes=num_classes, task=task).to(device)
         }).to(device)
         self.train_balance_accuracy = 0.
         self.compute_train_auc = AUROC(num_classes=num_classes, task=task).to(device)
@@ -86,8 +85,7 @@ class RuntimeObserver:
             'Recall': Recall(num_classes=num_classes, task=task, average=average).to(device),
             'Specificity': Specificity(num_classes=num_classes, task=task, average=average).to(device),
             'F1': F1Score(num_classes=num_classes, task=task, average=average).to(device),
-            # 'AuRoc': AUROC(num_classes=num_classes, task=task).to(device),
-            # 'BalanceAccuracy': None,
+            'CohenKappa': CohenKappa(num_classes=num_classes, task=task).to(device)
         }).to(device)
         self.eval_balance_accuracy = 0.
         self.compute_eval_auc = AUROC(num_classes=num_classes, task=task).to(device)
@@ -156,25 +154,30 @@ class RuntimeObserver:
         self.summary.add_scalar('eval_balance_accuracy', self.eval_balance_accuracy, epoch)
         self.summary.add_scalar('eval_f1', self.eval_metric['F1'], epoch)
         self.summary.add_scalar('eval_auc', self.eval_auc, epoch)
+        # self.summary.add_scalar('train_cohen_kappa', self.train_metric['CohenKappa'], epoch)
+        self.summary.add_scalar('eval_cohen_kappa', self.eval_metric['CohenKappa'], epoch)
+
     def print_result(self, e, epochs):
         train_output_result = (f"Epoch [{e}/{epochs}]:, train_loss={self.average_train_loss:.3f}, \n"
-                               f"train_confusionMatrix:\n{self.train_metric['confusionMatrix']}\n"
-                               f"train_accuracy={self.train_metric['Accuracy']}, \n"
-                               f"train_recall={self.train_metric['Recall']}, \n"
-                               f"train_precision={self.train_metric['Precision']}, \n"
-                               f"train_specificity={self.train_metric['Specificity']}, \n"
-                               f"train_balance_acc={self.train_balance_accuracy},\n "
-                               f"train_f1_score={self.train_metric['F1']},\n "
-                               f"train_auc={self.train_auc}\n")
+                           f"train_confusionMatrix:\n{self.train_metric['confusionMatrix']}\n"
+                           f"train_accuracy={self.train_metric['Accuracy']}, \n"
+                           f"train_recall={self.train_metric['Recall']}, \n"
+                           f"train_precision={self.train_metric['Precision']}, \n"
+                           f"train_specificity={self.train_metric['Specificity']}, \n"
+                           f"train_cohen_kappa={self.train_metric['CohenKappa']}, \n"
+                           f"train_balance_acc={self.train_balance_accuracy},\n "
+                           f"train_f1_score={self.train_metric['F1']},\n "
+                           f"train_auc={self.train_auc}\n")
         eval_output_result = (f"Epoch [{e}/{epochs}]:, eval_loss={self.average_eval_loss:.3f}, \n"
-                               f"eval_confusionMatrix:\n{self.eval_metric['confusionMatrix']}\n"
-                               f"eval_accuracy={self.eval_metric['Accuracy']}, \n"
-                               f"eval_recall={self.eval_metric['Recall']}, \n"
-                               f"eval_precision={self.eval_metric['Precision']}, \n"
-                               f"eval_specificity={self.eval_metric['Specificity']}, \n"
-                               f"eval_balance_acc={self.eval_balance_accuracy},\n "
-                               f"eval_f1_score={self.eval_metric['F1']},\n "
-                               f"eval_auc={self.eval_auc}\n\n")
+                           f"eval_confusionMatrix:\n{self.eval_metric['confusionMatrix']}\n"
+                           f"eval_accuracy={self.eval_metric['Accuracy']}, \n"
+                           f"eval_recall={self.eval_metric['Recall']}, \n"
+                           f"eval_precision={self.eval_metric['Precision']}, \n"
+                           f"eval_specificity={self.eval_metric['Specificity']}, \n"
+                           f"eval_cohen_kappa={self.eval_metric['CohenKappa']}, \n"
+                           f"eval_balance_acc={self.eval_balance_accuracy},\n "
+                           f"eval_f1_score={self.eval_metric['F1']},\n "
+                           f"eval_auc={self.eval_auc}\n\n")
         self.log(train_output_result)
         self.log(eval_output_result)
 
@@ -188,6 +191,7 @@ class RuntimeObserver:
         self.best_dicts['Specificity'] = self.eval_metric['Specificity']
         self.best_dicts['BalanceAccuracy'] = (self.eval_metric['Specificity'] + self.eval_metric['Recall']) /2.0
         self.best_dicts['F1'] = self.eval_metric['F1']
+        self.best_dicts['CohenKappa'] = self.eval_metric['CohenKappa']
         self.best_dicts['AuRoc'] = self.eval_auc
 
     def execute(self, e, epoch, train_dataset_length, eval_dataset_length, fold, model=None):
@@ -205,12 +209,13 @@ class RuntimeObserver:
 
     def finish(self, fold):
         best_result = (f"Fold {fold} Best Epoch: {self.best_dicts['epoch']}\n"
-                       f"Best confusionMatrix : {self.best_dicts['confusionMatrix']}\n"
-                       f"Best accuracy : {self.best_dicts['Accuracy']}, \n"
-                       f"Best recall : {self.best_dicts['Recall']}, \n"
-                       f"Best precision : {self.best_dicts['Precision']}, \n"
-                       f"Best specificity : {self.best_dicts['Specificity']}, \n"
-                       f"Best balance_acc : {self.best_dicts['BalanceAccuracy']},\n "
-                       f"Best f1_score : {self.best_dicts['F1']},\n "
-                       f"Best AUC : {self.best_dicts['AuRoc']}\n\n")
+                   f"Best confusionMatrix : {self.best_dicts['confusionMatrix']}\n"
+                   f"Best accuracy : {self.best_dicts['Accuracy']}, \n"
+                   f"Best recall : {self.best_dicts['Recall']}, \n"
+                   f"Best precision : {self.best_dicts['Precision']}, \n"
+                   f"Best specificity : {self.best_dicts['Specificity']}, \n"
+                   f"Best cohen_kappa : {self.best_dicts['CohenKappa']}, \n"
+                   f"Best balance_acc : {self.best_dicts['BalanceAccuracy']},\n "
+                   f"Best f1_score : {self.best_dicts['F1']},\n "
+                   f"Best AUC : {self.best_dicts['AuRoc']}\n\n")
         self.log(best_result)
